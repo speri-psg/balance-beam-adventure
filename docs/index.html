@@ -49,7 +49,8 @@ const SETTINGS = {
     jumpForce: -350,
     gravity: 800,
     beamY: GAME_HEIGHT - 120,
-    beamHeight: 15
+    beamHeight: 15,
+    floorY: GAME_HEIGHT - 50
 };
 
 // Level configurations
@@ -136,6 +137,17 @@ class GameScene extends Phaser.Scene {
         this.isInvincible = false;
         this.facingFront = false;
         this.frontTimer = 0;
+
+        // Floor routine states
+        this.isFlipping = false;
+        this.isFlippingDown = false;
+        this.isFloorExercise = false;
+        this.isFlippingUp = false;
+        this.isPausing = false;
+        this.flipAngle = 0;
+        this.flipCount = 0;
+        this.pauseTimer = 0;
+        this.cartwheelAngle = 0;
     }
 
     create() {
@@ -321,6 +333,74 @@ class GameScene extends Phaser.Scene {
         this.player.add(this.add.ellipse(8, -12, 5, 4, 0xFFAAAA, 0.6));
     }
 
+    drawPlayerFlipping() {
+        this.player.removeAll(true);
+
+        // Tucked body during flip
+        // Legs tucked
+        this.player.add(this.add.ellipse(-5, 8, 7, 14, COLORS.SKIN));
+        this.player.add(this.add.ellipse(5, 8, 7, 14, COLORS.SKIN));
+
+        // Body tucked
+        this.player.add(this.add.ellipse(0, 0, 22, 26, COLORS.LEOTARD));
+
+        // Arms wrapped
+        this.player.add(this.add.ellipse(-10, 2, 5, 16, COLORS.SKIN));
+        this.player.add(this.add.ellipse(10, 2, 5, 16, COLORS.SKIN));
+
+        // Head
+        this.player.add(this.add.ellipse(0, -16, 20, 18, COLORS.HAIR));
+        this.player.add(this.add.ellipse(0, -14, 16, 14, COLORS.SKIN));
+
+        // Ponytail flying
+        const pony = this.add.ellipse(0, -28, 8, 14, COLORS.HAIR);
+        pony.setRotation(this.flipAngle * 0.01);
+        this.player.add(pony);
+
+        // Determined eyes
+        this.player.add(this.add.circle(-4, -15, 2, 0x000000));
+        this.player.add(this.add.circle(4, -15, 2, 0x000000));
+    }
+
+    drawPlayerCartwheel() {
+        this.player.removeAll(true);
+
+        // Extended body for cartwheel
+        // Legs spread
+        const leg1 = this.add.rectangle(0, 18, 7, 26, COLORS.SKIN).setOrigin(0.5, 0);
+        leg1.setRotation(0.4);
+        this.player.add(leg1);
+
+        const leg2 = this.add.rectangle(0, -5, 7, 26, COLORS.SKIN).setOrigin(0.5, 1);
+        leg2.setRotation(-0.4);
+        this.player.add(leg2);
+
+        // Body stretched
+        this.player.add(this.add.rectangle(0, 5, 18, 28, COLORS.LEOTARD));
+
+        // Arms spread
+        const arm1 = this.add.rectangle(-10, 0, 5, 20, COLORS.SKIN).setOrigin(0.5, 0);
+        arm1.setRotation(0.6);
+        this.player.add(arm1);
+
+        const arm2 = this.add.rectangle(10, 0, 5, 20, COLORS.SKIN).setOrigin(0.5, 0);
+        arm2.setRotation(-0.6);
+        this.player.add(arm2);
+
+        // Head
+        this.player.add(this.add.ellipse(0, -18, 18, 16, COLORS.HAIR));
+        this.player.add(this.add.ellipse(0, -16, 14, 13, COLORS.SKIN));
+
+        // Ponytail
+        const pony = this.add.ellipse(0, -28, 6, 12, COLORS.HAIR);
+        pony.setRotation(this.cartwheelAngle * 0.005);
+        this.player.add(pony);
+
+        // Eyes
+        this.player.add(this.add.circle(-3, -16, 2, 0x000000));
+        this.player.add(this.add.circle(3, -16, 2, 0x000000));
+    }
+
     createUI() {
         this.levelText = this.add.text(GAME_WIDTH/2, 20, `Level ${this.currentLevel}`, {
             fontSize: '24px',
@@ -340,10 +420,59 @@ class GameScene extends Phaser.Scene {
     }
 
     jump() {
-        if (this.isGrounded && this.isPlaying) {
-            this.playerVelocityY = SETTINGS.jumpForce;
+        if (this.isGrounded && this.isPlaying && !this.isFlipping && !this.isFloorExercise) {
+            // Check if obstacles are close - need super jump
+            const needsSuperJump = this.checkObstaclesClose();
+
+            if (needsSuperJump) {
+                // Super high jump (50% higher)
+                this.playerVelocityY = SETTINGS.jumpForce * 1.5;
+            } else {
+                this.playerVelocityY = SETTINGS.jumpForce;
+            }
             this.isGrounded = false;
         }
+    }
+
+    checkObstaclesClose() {
+        // Check if both a ball and bee are within danger range
+        const dangerRange = 200; // pixels ahead
+        let ballClose = false;
+        let beeClose = false;
+
+        this.balls.getChildren().forEach(ball => {
+            const dist = ball.x - this.player.x;
+            if (dist > 0 && dist < dangerRange) {
+                ballClose = true;
+            }
+        });
+
+        this.bees.getChildren().forEach(bee => {
+            const dist = bee.x - this.player.x;
+            if (dist > 0 && dist < dangerRange) {
+                beeClose = true;
+            }
+        });
+
+        // Need super jump if both are close, or if any obstacle is very close
+        const veryCloseRange = 100;
+        let anyVeryClose = false;
+
+        this.balls.getChildren().forEach(ball => {
+            const dist = ball.x - this.player.x;
+            if (dist > 0 && dist < veryCloseRange) {
+                anyVeryClose = true;
+            }
+        });
+
+        this.bees.getChildren().forEach(bee => {
+            const dist = bee.x - this.player.x;
+            if (dist > 0 && dist < veryCloseRange) {
+                anyVeryClose = true;
+            }
+        });
+
+        return (ballClose && beeClose) || anyVeryClose;
     }
 
     spawnBall() {
@@ -395,9 +524,25 @@ class GameScene extends Phaser.Scene {
     }
 
     update(time, delta) {
-        if (!this.isPlaying) return;
-
         const dt = delta / 1000;
+
+        // Handle floor routine animations
+        if (this.isFlippingDown) {
+            this.updateFlipDown(dt);
+            return;
+        }
+
+        if (this.isFloorExercise) {
+            this.updateFloorExercise(dt);
+            return;
+        }
+
+        if (this.isFlippingUp) {
+            this.updateFlipUp(dt);
+            return;
+        }
+
+        if (!this.isPlaying) return;
 
         // Space key
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
@@ -449,7 +594,7 @@ class GameScene extends Phaser.Scene {
 
         // Check win
         if (this.player.x >= this.beamRight - 30) {
-            this.levelComplete();
+            this.startFloorRoutine();
             return;
         }
 
@@ -484,6 +629,126 @@ class GameScene extends Phaser.Scene {
                 this.playerHit();
             }
         });
+    }
+
+    // ============== FLOOR ROUTINE ==============
+    startFloorRoutine() {
+        this.isPlaying = false;
+        this.ballTimer.remove();
+        this.beeTimer.remove();
+
+        // Clear obstacles
+        this.balls.clear(true, true);
+        this.bees.clear(true, true);
+
+        // Start flip down
+        this.isFlippingDown = true;
+        this.flipAngle = 0;
+        this.flipPhase = 0;
+        this.flipStartY = this.player.y;
+    }
+
+    updateFlipDown(dt) {
+        this.flipAngle += dt * 720; // Fast rotation
+        this.player.setRotation(Phaser.Math.DegToRad(this.flipAngle));
+
+        // Move down to floor
+        const targetY = SETTINGS.floorY - 35;
+        this.player.y += (targetY - this.player.y) * dt * 3;
+
+        this.drawPlayerFlipping();
+
+        if (this.flipAngle >= 360) {
+            this.player.setRotation(0);
+            this.player.y = targetY;
+            this.isFlippingDown = false;
+
+            // Start floor exercise
+            this.isFloorExercise = true;
+            this.flipCount = 0;
+            this.cartwheelAngle = 0;
+            this.isPausing = false;
+            this.pauseTimer = 0;
+        }
+    }
+
+    updateFloorExercise(dt) {
+        // Handle pause
+        if (this.isPausing) {
+            this.pauseTimer -= dt;
+            this.drawPlayerFront(); // Stand facing player during pause
+            this.player.setRotation(0);
+
+            if (this.pauseTimer <= 0) {
+                this.isPausing = false;
+                this.flipCount = 0;
+            }
+            return;
+        }
+
+        // Move left while doing cartwheels
+        const speed = 200;
+        this.player.x -= speed * dt;
+        this.cartwheelAngle += dt * 400;
+
+        // Rotate the whole container
+        this.player.setRotation(Phaser.Math.DegToRad(this.cartwheelAngle));
+        this.drawPlayerCartwheel();
+
+        // Count flips
+        if (this.cartwheelAngle >= 360) {
+            this.cartwheelAngle -= 360;
+            this.flipCount++;
+
+            // Pause after every 3 flips
+            if (this.flipCount >= 3) {
+                this.isPausing = true;
+                this.pauseTimer = 0.5;
+                this.player.setRotation(0);
+            }
+        }
+
+        // Check if reached start
+        if (this.player.x <= this.beamLeft + 30) {
+            this.player.x = this.beamLeft + 30;
+            this.player.setRotation(0);
+            this.isFloorExercise = false;
+
+            // Start flip up
+            this.isFlippingUp = true;
+            this.flipAngle = 0;
+            this.flipStartY = this.player.y;
+        }
+    }
+
+    updateFlipUp(dt) {
+        this.flipAngle += dt * 540;
+
+        // Arc motion up to beam
+        const progress = Math.min(this.flipAngle / 360, 1);
+        const targetY = this.beamTop - 35;
+        const arcHeight = 80;
+        const arc = Math.sin(progress * Math.PI) * arcHeight;
+
+        this.player.y = this.flipStartY + (targetY - this.flipStartY) * progress - arc;
+        this.player.setRotation(Phaser.Math.DegToRad(this.flipAngle));
+
+        this.drawPlayerFlipping();
+
+        if (this.flipAngle >= 360) {
+            this.player.setRotation(0);
+            this.player.y = targetY;
+            this.isFlippingUp = false;
+
+            // Face player and celebrate
+            this.facingFront = true;
+            this.drawPlayerFront();
+
+            // Now complete the level
+            this.time.delayedCall(500, () => {
+                this.levelComplete();
+            });
+        }
     }
 
     checkCollision(obstacle, radius) {
@@ -523,10 +788,6 @@ class GameScene extends Phaser.Scene {
     }
 
     levelComplete() {
-        this.isPlaying = false;
-        this.ballTimer.remove();
-        this.beeTimer.remove();
-
         this.score += 100;
 
         // Play bell sound
@@ -536,7 +797,7 @@ class GameScene extends Phaser.Scene {
         this.createConfetti();
 
         // Show message
-        this.time.delayedCall(500, () => {
+        this.time.delayedCall(300, () => {
             const overlay = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.5);
 
             let title, btnText;

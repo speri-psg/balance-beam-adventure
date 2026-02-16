@@ -761,11 +761,15 @@ class Player(Widget):
 
         self.draw_player()
 
-    def jump(self):
+    def jump(self, super_jump=False):
         if self.is_on_ground and not self.is_jumping:
             self.is_jumping = True
             self.is_on_ground = False
-            self.velocity_y = GameSettings.PLAYER_JUMP_FORCE
+            # Super jump is 50% higher when obstacles are close together
+            if super_jump:
+                self.velocity_y = GameSettings.PLAYER_JUMP_FORCE * 1.5
+            else:
+                self.velocity_y = GameSettings.PLAYER_JUMP_FORCE
 
     def get_collision_rect(self):
         s = GameSettings.SCALE
@@ -1640,10 +1644,44 @@ class GameWidget(Widget):
         menu_btn.bind(on_press=self.go_to_menu)
         self.add_widget(menu_btn)
 
+    def check_obstacles_close(self):
+        """Check if both a ball and bee are close - requires super jump"""
+        if not self.player:
+            return False
+
+        danger_range = 200  # pixels ahead of player
+        very_close_range = 100  # very close requires super jump
+
+        player_x = self.player.x
+        ball_close = False
+        bee_close = False
+        any_very_close = False
+
+        # Check balls
+        for ball in self.balls:
+            dist = ball.x - player_x
+            if 0 < dist < danger_range:
+                ball_close = True
+                if dist < very_close_range:
+                    any_very_close = True
+
+        # Check bees
+        for bee in self.bees:
+            dist = bee.x - player_x
+            if 0 < dist < danger_range:
+                bee_close = True
+                if dist < very_close_range:
+                    any_very_close = True
+
+        # Need super jump if both ball and bee close, or any obstacle very close
+        return (ball_close and bee_close) or any_very_close
+
     def on_touch(self, window, touch):
         if self.is_active and not self.is_game_over and not self.is_level_complete:
             if self.player:
-                self.player.jump()
+                # Check if we need a super jump (obstacles close together)
+                needs_super_jump = self.check_obstacles_close()
+                self.player.jump(super_jump=needs_super_jump)
         return False
 
     def next_level(self, instance):
