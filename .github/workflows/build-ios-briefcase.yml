@@ -1,0 +1,72 @@
+name: Build iOS with Briefcase
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Briefcase
+      run: |
+        python -m pip install --upgrade pip
+        pip install briefcase
+
+    - name: Create iOS project
+      run: |
+        briefcase create iOS
+
+    - name: Build iOS project
+      run: |
+        briefcase build iOS
+
+    - name: Install Certificates
+      if: github.event_name != 'pull_request'
+      env:
+        BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+        P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+        KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      run: |
+        # Create certificate file
+        CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+        echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+
+        # Create keychain
+        KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+        security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+        security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+        security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+        security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+        security list-keychain -d user -s $KEYCHAIN_PATH
+
+        # Install provisioning profile
+        PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+        echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+        mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+        cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
+
+    - name: Package for App Store
+      if: github.event_name != 'pull_request'
+      run: |
+        briefcase package iOS --adhoc
+
+    - name: Upload IPA
+      uses: actions/upload-artifact@v4
+      with:
+        name: BalanceBeamAdventure-iOS
+        path: iOS/*.ipa
+        if-no-files-found: warn

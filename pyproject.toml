@@ -1,0 +1,52 @@
+[build-system]
+requires = ["briefcase"]
+
+[tool.briefcase]
+project_name = "Balance Beam Adventure"
+bundle = "com.yourname"
+version = "1.0.0"
+url = "https://github.com/yourname/balance-beam-adventure"
+license = "MIT"
+author = "Your Name"
+author_email = "your.email@example.com"
+
+[tool.briefcase.app.balancebeamadventure]
+formal_name = "Balance Beam Adventure"
+description = "A fun gymnastics game for kids"
+long_description = """Balance Beam Adventure is an exciting game where players control a gymnast walking across a balance beam, jumping over bowling balls and avoiding bees!"""
+icon = "icons/icon"
+sources = [
+    "main.py",
+]
+requires = [
+    "kivy>=2.3.0",
+]
+
+[tool.briefcase.app.balancebeamadventure.macOS]
+requires = [
+    "toga-cocoa~=0.4.0",
+    "kivy>=2.3.0",
+]
+
+[tool.briefcase.app.balancebeamadventure.iOS]
+requires = [
+    "kivy-ios",
+    "kivy>=2.3.0",
+]
+permission.camera = false
+permission.microphone = false
+permission.photo_library = false
+
+[tool.briefcase.app.balancebeamadventure.android]
+requires = [
+    "kivy>=2.3.0",
+]
+permission.INTERNET = false
+build_gradle_extra_content = """
+android {
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 33
+    }
+}
+"""

@@ -1,0 +1,27 @@
+{
+    "app_name": "Balance Beam Adventure",
+    "bundle_identifier": "com.yourname.balancebeamadventure",
+    "version": "1.0.0",
+    "build_number": "1",
+    "orientation": "landscape",
+    "minimum_ios_version": "15.0",
+    "python_version": "3.11",
+    "requirements": [
+        "python3",
+        "kivy"
+    ],
+    "source_files": [
+        "main.py"
+    ],
+    "icon": "icon.png",
+    "launch_screen": {
+        "background_color": "#87CEEB",
+        "image": "launch.png"
+    },
+    "permissions": [],
+    "capabilities": [],
+    "frameworks": [],
+    "entitlements": {
+        "com.apple.developer.game-center": false
+    }
+}
