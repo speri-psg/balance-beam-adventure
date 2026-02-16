@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Balance Beam Adventure</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #87CEEB;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        #game-container {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <script>
+// ============== BALANCE BEAM ADVENTURE - WEB VERSION ==============
+
+const GAME_WIDTH = 800;
+const GAME_HEIGHT = 500;
+
+// Colors
+const COLORS = {
+    SKY: 0x87CEEB,
+    GRASS: 0x7CFC00,
+    BEAM: 0x8B4513,
+    BEAM_DARK: 0x654321,
+    SKIN: 0xFFD5BD,
+    LEOTARD: 0xFF69B4,
+    HAIR: 0x654321,
+    BALL: 0x1E3A5F,
+    BEE_YELLOW: 0xFFD700,
+    BEE_PINK: 0xFF69B4
+};
+
+// Game settings
+const SETTINGS = {
+    playerSpeed: 80,
+    jumpForce: -350,
+    gravity: 800,
+    beamY: GAME_HEIGHT - 120,
+    beamHeight: 15
+};
+
+// Level configurations
+const LEVELS = [
+    { ballSpeed: 120, ballInterval: 3000, beeInterval: 5000, ballCount: 2, beeCount: 1 },
+    { ballSpeed: 140, ballInterval: 2500, beeInterval: 4500, ballCount: 3, beeCount: 2 },
+    { ballSpeed: 160, ballInterval: 2200, beeInterval: 4000, ballCount: 3, beeCount: 2 },
+    { ballSpeed: 180, ballInterval: 2000, beeInterval: 3500, ballCount: 4, beeCount: 3 },
+    { ballSpeed: 200, ballInterval: 1800, beeInterval: 3000, ballCount: 4, beeCount: 4 }
+];
+
+// ============== MENU SCENE ==============
+class MenuScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'MenuScene' });
+    }
+
+    create() {
+        // Sky background
+        this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, COLORS.SKY);
+
+        // Sun
+        this.add.circle(GAME_WIDTH - 80, 60, 40, 0xFFFF00);
+
+        // Grass
+        this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT - 40, GAME_WIDTH, 80, COLORS.GRASS);
+
+        // Title
+        this.add.text(GAME_WIDTH/2, 100, 'Balance Beam', {
+            fontSize: '48px',
+            fontWeight: 'bold',
+            color: '#333'
+        }).setOrigin(0.5);
+
+        this.add.text(GAME_WIDTH/2, 160, 'Adventure', {
+            fontSize: '42px',
+            fontWeight: 'bold',
+            color: '#FF6600'
+        }).setOrigin(0.5);
+
+        // Play button
+        const playBtn = this.add.rectangle(GAME_WIDTH/2, 280, 200, 60, 0x4CAF50)
+            .setInteractive({ useHandCursor: true });
+        this.add.text(GAME_WIDTH/2, 280, 'PLAY', {
+            fontSize: '32px',
+            fontWeight: 'bold',
+            color: '#FFF'
+        }).setOrigin(0.5);
+
+        playBtn.on('pointerdown', () => {
+            this.scene.start('GameScene', { level: 1, score: 0, lives: 3 });
+        });
+
+        playBtn.on('pointerover', () => playBtn.setFillStyle(0x45a049));
+        playBtn.on('pointerout', () => playBtn.setFillStyle(0x4CAF50));
+
+        // Instructions
+        this.add.text(GAME_WIDTH/2, 380, 'Tap or Press SPACE to Jump!', {
+            fontSize: '20px',
+            color: '#333'
+        }).setOrigin(0.5);
+
+        this.add.text(GAME_WIDTH/2, 420, 'Avoid bowling balls and bees!', {
+            fontSize: '18px',
+            color: '#666'
+        }).setOrigin(0.5);
+    }
+}
+
+// ============== GAME SCENE ==============
+class GameScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'GameScene' });
+    }
+
+    init(data) {
+        this.currentLevel = data.level || 1;
+        this.score = data.score || 0;
+        this.lives = data.lives || 3;
+        this.levelConfig = LEVELS[this.currentLevel - 1];
+        this.ballsSpawned = 0;
+        this.beesSpawned = 0;
+        this.isPlaying = true;
+        this.isInvincible = false;
+        this.facingFront = false;
+        this.frontTimer = 0;
+    }
+
+    create() {
+        // Background
+        this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, COLORS.SKY);
+
+        // Sun
+        this.add.circle(GAME_WIDTH - 80, 60, 35, 0xFFFF00);
+
+        // Clouds
+        this.createCloud(100, 80);
+        this.createCloud(350, 60);
+        this.createCloud(600, 90);
+
+        // Grass
+        this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT - 30, GAME_WIDTH, 60, COLORS.GRASS);
+
+        // Balance beam
+        this.beamLeft = 50;
+        this.beamRight = GAME_WIDTH - 50;
+        this.beamTop = SETTINGS.beamY;
+
+        this.add.rectangle(GAME_WIDTH/2, this.beamTop + SETTINGS.beamHeight/2,
+            this.beamRight - this.beamLeft, SETTINGS.beamHeight, COLORS.BEAM);
+
+        // Beam supports
+        this.add.rectangle(this.beamLeft + 30, this.beamTop + 40, 15, 80, COLORS.BEAM_DARK);
+        this.add.rectangle(this.beamRight - 30, this.beamTop + 40, 15, 80, COLORS.BEAM_DARK);
+
+        // Finish flag
+        this.add.rectangle(this.beamRight - 20, this.beamTop - 30, 5, 60, COLORS.BEAM_DARK);
+        this.add.triangle(this.beamRight - 20, this.beamTop - 55, 0, 0, 0, 25, 30, 12, 0xFF0000);
+
+        // Create player graphics
+        this.createPlayer();
+
+        // Obstacle groups
+        this.balls = this.add.group();
+        this.bees = this.add.group();
+
+        // UI
+        this.createUI();
+
+        // Input
+        this.input.on('pointerdown', () => this.jump());
+        this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+        // Spawn timers
+        this.ballTimer = this.time.addEvent({
+            delay: this.levelConfig.ballInterval,
+            callback: this.spawnBall,
+            callbackScope: this,
+            loop: true
+        });
+
+        this.beeTimer = this.time.addEvent({
+            delay: this.levelConfig.beeInterval,
+            callback: this.spawnBee,
+            callbackScope: this,
+            loop: true
+        });
+
+        // Physics
+        this.playerVelocityY = 0;
+        this.isGrounded = true;
+        this.legAngle = 0;
+    }
+
+    createCloud(x, y) {
+        this.add.ellipse(x, y, 60, 30, 0xFFFFFF);
+        this.add.ellipse(x + 25, y - 10, 50, 25, 0xFFFFFF);
+        this.add.ellipse(x - 20, y + 5, 40, 20, 0xFFFFFF);
+    }
+
+    createPlayer() {
+        this.player = this.add.container(this.beamLeft + 30, this.beamTop - 35);
+        this.drawPlayerSide();
+    }
+
+    drawPlayerSide() {
+        this.player.removeAll(true);
+
+        const legSwing = Math.sin(this.legAngle) * 0.3;
+
+        // Back leg
+        const backLeg = this.add.rectangle(-3, 20, 6, 20, COLORS.SKIN).setOrigin(0.5, 0);
+        backLeg.setRotation(-legSwing);
+        backLeg.setAlpha(0.8);
+        this.player.add(backLeg);
+
+        // Front leg
+        const frontLeg = this.add.rectangle(3, 20, 6, 20, COLORS.SKIN).setOrigin(0.5, 0);
+        frontLeg.setRotation(legSwing);
+        this.player.add(frontLeg);
+
+        // Body (leotard)
+        this.player.add(this.add.rectangle(0, 5, 16, 25, COLORS.LEOTARD));
+
+        // Back arm
+        const backArm = this.add.rectangle(-8, -2, 5, 16, COLORS.SKIN).setOrigin(0.5, 0);
+        backArm.setRotation(legSwing + 0.3);
+        backArm.setAlpha(0.8);
+        this.player.add(backArm);
+
+        // Front arm
+        const frontArm = this.add.rectangle(8, -2, 5, 16, COLORS.SKIN).setOrigin(0.5, 0);
+        frontArm.setRotation(-legSwing - 0.3);
+        this.player.add(frontArm);
+
+        // Head
+        this.player.add(this.add.ellipse(0, -18, 18, 16, COLORS.HAIR)); // Hair back
+        this.player.add(this.add.ellipse(2, -16, 14, 14, COLORS.SKIN)); // Face
+
+        // Ponytail
+        const pony = this.add.ellipse(-12, -15, 8, 18, COLORS.HAIR);
+        pony.setRotation(-0.5 + Math.sin(this.legAngle * 1.5) * 0.2);
+        this.player.add(pony);
+
+        // Eye
+        this.player.add(this.add.circle(6, -17, 3, 0xFFFFFF));
+        this.player.add(this.add.circle(7, -17, 1.5, 0x000000));
+
+        // Smile
+        const smile = this.add.graphics();
+        smile.lineStyle(1.5, 0x000000);
+        smile.beginPath();
+        smile.arc(4, -12, 4, 0, Math.PI * 0.7);
+        smile.strokePath();
+        this.player.add(smile);
+
+        // Cheek
+        this.player.add(this.add.ellipse(2, -12, 4, 3, 0xFFAAAA, 0.5));
+    }
+
+    drawPlayerFront() {
+        this.player.removeAll(true);
+
+        // Legs
+        this.player.add(this.add.rectangle(-6, 22, 7, 22, COLORS.SKIN));
+        this.player.add(this.add.rectangle(6, 22, 7, 22, COLORS.SKIN));
+
+        // Body
+        this.player.add(this.add.rectangle(0, 5, 18, 26, COLORS.LEOTARD));
+
+        // Arms raised (V shape)
+        const leftArm = this.add.rectangle(-12, -8, 5, 18, COLORS.SKIN).setOrigin(0.5, 1);
+        leftArm.setRotation(-0.5);
+        this.player.add(leftArm);
+
+        const rightArm = this.add.rectangle(12, -8, 5, 18, COLORS.SKIN).setOrigin(0.5, 1);
+        rightArm.setRotation(0.5);
+        this.player.add(rightArm);
+
+        // Head
+        this.player.add(this.add.ellipse(0, -18, 20, 18, COLORS.HAIR));
+        this.player.add(this.add.ellipse(0, -16, 16, 15, COLORS.SKIN));
+
+        // Ponytail
+        this.player.add(this.add.ellipse(0, -30, 8, 12, COLORS.HAIR));
+
+        // Happy closed eyes
+        const leftEye = this.add.graphics();
+        leftEye.lineStyle(2, 0x000000);
+        leftEye.arc(-4, -17, 3, Math.PI, 0);
+        leftEye.strokePath();
+        this.player.add(leftEye);
+
+        const rightEye = this.add.graphics();
+        rightEye.lineStyle(2, 0x000000);
+        rightEye.arc(4, -17, 3, Math.PI, 0);
+        rightEye.strokePath();
+        this.player.add(rightEye);
+
+        // Big smile
+        const smile = this.add.graphics();
+        smile.lineStyle(2, 0x000000);
+        smile.arc(0, -10, 6, 0, Math.PI);
+        smile.strokePath();
+        this.player.add(smile);
+
+        // Rosy cheeks
+        this.player.add(this.add.ellipse(-8, -12, 5, 4, 0xFFAAAA, 0.6));
+        this.player.add(this.add.ellipse(8, -12, 5, 4, 0xFFAAAA, 0.6));
+    }
+
+    createUI() {
+        this.levelText = this.add.text(GAME_WIDTH/2, 20, `Level ${this.currentLevel}`, {
+            fontSize: '24px',
+            fontWeight: 'bold',
+            color: '#333'
+        }).setOrigin(0.5, 0);
+
+        this.scoreText = this.add.text(20, 20, `Score: ${this.score}`, {
+            fontSize: '20px',
+            color: '#333'
+        });
+
+        this.livesText = this.add.text(GAME_WIDTH - 20, 20, `Lives: ${'❤️'.repeat(this.lives)}`, {
+            fontSize: '20px',
+            color: '#333'
+        }).setOrigin(1, 0);
+    }
+
+    jump() {
+        if (this.isGrounded && this.isPlaying) {
+            this.playerVelocityY = SETTINGS.jumpForce;
+            this.isGrounded = false;
+        }
+    }
+
+    spawnBall() {
+        if (!this.isPlaying || this.ballsSpawned >= this.levelConfig.ballCount) return;
+
+        const ball = this.add.container(GAME_WIDTH + 30, this.beamTop - 15);
+
+        // Ball body
+        ball.add(this.add.circle(0, 0, 18, COLORS.BALL));
+        // Finger holes
+        ball.add(this.add.circle(0, -8, 4, 0xFFFFFF));
+        ball.add(this.add.circle(-6, 2, 4, 0xFFFFFF));
+        ball.add(this.add.circle(6, 2, 4, 0xFFFFFF));
+        // Shine
+        ball.add(this.add.circle(-6, -8, 4, 0xFFFFFF, 0.3));
+
+        ball.speed = this.levelConfig.ballSpeed;
+        ball.rotation = 0;
+        this.balls.add(ball);
+        this.ballsSpawned++;
+    }
+
+    spawnBee() {
+        if (!this.isPlaying || this.beesSpawned >= this.levelConfig.beeCount) return;
+
+        const beeY = Phaser.Math.Between(this.beamTop - 100, this.beamTop - 50);
+        const bee = this.add.container(GAME_WIDTH + 30, beeY);
+
+        // Wings (pink!)
+        bee.add(this.add.ellipse(-10, -8, 16, 10, COLORS.BEE_PINK, 0.7));
+        bee.add(this.add.ellipse(10, -8, 16, 10, COLORS.BEE_PINK, 0.7));
+
+        // Body
+        bee.add(this.add.ellipse(0, 0, 28, 18, COLORS.BEE_YELLOW));
+
+        // Stripes
+        bee.add(this.add.rectangle(-4, 0, 4, 16, 0x000000));
+        bee.add(this.add.rectangle(4, 0, 4, 16, 0x000000));
+
+        // Eyes
+        bee.add(this.add.circle(10, -2, 3, 0x000000));
+
+        bee.speed = 150;
+        bee.startY = beeY;
+        bee.bobOffset = 0;
+        bee.wingAngle = 0;
+        this.bees.add(bee);
+        this.beesSpawned++;
+    }
+
+    update(time, delta) {
+        if (!this.isPlaying) return;
+
+        const dt = delta / 1000;
+
+        // Space key
+        if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            this.jump();
+        }
+
+        // Player movement
+        this.player.x += SETTINGS.playerSpeed * dt;
+
+        // Handle facing front timer
+        if (this.facingFront) {
+            this.frontTimer -= dt;
+            if (this.frontTimer <= 0) {
+                this.facingFront = false;
+            }
+        }
+
+        // Gravity
+        if (!this.isGrounded) {
+            this.playerVelocityY += SETTINGS.gravity * dt;
+            this.player.y += this.playerVelocityY * dt;
+
+            if (this.player.y >= this.beamTop - 35) {
+                this.player.y = this.beamTop - 35;
+                this.playerVelocityY = 0;
+                const wasInAir = !this.isGrounded;
+                this.isGrounded = true;
+
+                // Turn to face player after landing
+                if (wasInAir) {
+                    this.facingFront = true;
+                    this.frontTimer = 0.4;
+                }
+            }
+        }
+
+        // Walking animation
+        if (this.isGrounded && !this.facingFront) {
+            this.legAngle += dt * 10;
+            this.drawPlayerSide();
+        } else if (this.facingFront) {
+            this.drawPlayerFront();
+        }
+
+        // Invincibility flash
+        if (this.isInvincible) {
+            this.player.setAlpha(Math.sin(time * 0.02) > 0 ? 1 : 0.3);
+        }
+
+        // Check win
+        if (this.player.x >= this.beamRight - 30) {
+            this.levelComplete();
+            return;
+        }
+
+        // Update balls
+        this.balls.getChildren().forEach(ball => {
+            ball.x -= ball.speed * dt;
+            ball.rotation -= dt * 3;
+            ball.list[0].setRotation(ball.rotation);
+
+            if (ball.x < -50) {
+                ball.destroy();
+            } else if (!this.isInvincible && this.checkCollision(ball, 18)) {
+                this.playerHit();
+            }
+        });
+
+        // Update bees
+        this.bees.getChildren().forEach(bee => {
+            bee.x -= bee.speed * dt;
+            bee.bobOffset += dt * 3;
+            bee.y = bee.startY + Math.sin(bee.bobOffset) * 15;
+
+            // Wing animation
+            bee.wingAngle += dt * 25;
+            const wingScale = 0.7 + Math.abs(Math.sin(bee.wingAngle)) * 0.5;
+            bee.list[0].setScale(1, wingScale);
+            bee.list[1].setScale(1, wingScale);
+
+            if (bee.x < -50) {
+                bee.destroy();
+            } else if (!this.isInvincible && this.checkCollision(bee, 15)) {
+                this.playerHit();
+            }
+        });
+    }
+
+    checkCollision(obstacle, radius) {
+        const dx = this.player.x - obstacle.x;
+        const dy = this.player.y - obstacle.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        return dist < radius + 15;
+    }
+
+    playerHit() {
+        this.lives--;
+        this.livesText.setText(`Lives: ${'❤️'.repeat(Math.max(0, this.lives))}${'🖤'.repeat(3 - Math.max(0, this.lives))}`);
+
+        if (this.lives <= 0) {
+            this.gameOver();
+        } else {
+            this.isInvincible = true;
+            this.time.delayedCall(1500, () => {
+                this.isInvincible = false;
+                this.player.setAlpha(1);
+            });
+            this.resetPlayer();
+        }
+    }
+
+    resetPlayer() {
+        this.player.x = this.beamLeft + 30;
+        this.player.y = this.beamTop - 35;
+        this.playerVelocityY = 0;
+        this.isGrounded = true;
+
+        // Clear obstacles
+        this.balls.clear(true, true);
+        this.bees.clear(true, true);
+        this.ballsSpawned = 0;
+        this.beesSpawned = 0;
+    }
+
+    levelComplete() {
+        this.isPlaying = false;
+        this.ballTimer.remove();
+        this.beeTimer.remove();
+
+        this.score += 100;
+
+        // Play bell sound
+        this.playBellSound();
+
+        // Show confetti
+        this.createConfetti();
+
+        // Show message
+        this.time.delayedCall(500, () => {
+            const overlay = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.5);
+
+            let title, btnText;
+            if (this.currentLevel >= 5) {
+                title = 'YOU WON!';
+                btnText = 'Play Again';
+            } else {
+                title = 'Level Complete!';
+                btnText = 'Next Level';
+            }
+
+            this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 - 60, title, {
+                fontSize: '36px',
+                fontWeight: 'bold',
+                color: '#FFF'
+            }).setOrigin(0.5);
+
+            this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 - 20, `+100 Points!`, {
+                fontSize: '24px',
+                color: '#FFD700'
+            }).setOrigin(0.5);
+
+            this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 10, `Score: ${this.score}`, {
+                fontSize: '22px',
+                color: '#FFF'
+            }).setOrigin(0.5);
+
+            const btn = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2 + 70, 180, 50, 0x4CAF50)
+                .setInteractive({ useHandCursor: true });
+            this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 70, btnText, {
+                fontSize: '24px',
+                fontWeight: 'bold',
+                color: '#FFF'
+            }).setOrigin(0.5);
+
+            btn.on('pointerdown', () => {
+                if (this.currentLevel >= 5) {
+                    this.scene.start('GameScene', { level: 1, score: 0, lives: 3 });
+                } else {
+                    this.scene.start('GameScene', { level: this.currentLevel + 1, score: this.score, lives: this.lives });
+                }
+            });
+        });
+    }
+
+    gameOver() {
+        this.isPlaying = false;
+        this.ballTimer.remove();
+        this.beeTimer.remove();
+
+        const overlay = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.6);
+
+        this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 - 60, 'Game Over', {
+            fontSize: '40px',
+            fontWeight: 'bold',
+            color: '#FF4444'
+        }).setOrigin(0.5);
+
+        this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2, `Score: ${this.score}`, {
+            fontSize: '28px',
+            color: '#FFF'
+        }).setOrigin(0.5);
+
+        const btn = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2 + 70, 180, 50, 0x4CAF50)
+            .setInteractive({ useHandCursor: true });
+        this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 70, 'Try Again', {
+            fontSize: '24px',
+            fontWeight: 'bold',
+            color: '#FFF'
+        }).setOrigin(0.5);
+
+        btn.on('pointerdown', () => {
+            this.scene.start('GameScene', { level: this.currentLevel, score: 0, lives: 3 });
+        });
+    }
+
+    createConfetti() {
+        for (let i = 0; i < 50; i++) {
+            const x = Phaser.Math.Between(50, GAME_WIDTH - 50);
+            const colors = [0xFF69B4, 0xFFD700, 0x4CAF50, 0x2196F3, 0xFF5722, 0x9C27B0];
+            const color = colors[Phaser.Math.Between(0, colors.length - 1)];
+
+            const confetti = this.add.rectangle(x, -20, 10, 10, color);
+
+            this.tweens.add({
+                targets: confetti,
+                y: GAME_HEIGHT + 20,
+                x: x + Phaser.Math.Between(-100, 100),
+                rotation: Phaser.Math.Between(0, 10),
+                duration: Phaser.Math.Between(2000, 3500),
+                ease: 'Linear'
+            });
+        }
+
+        // Medals
+        for (let i = 0; i < 8; i++) {
+            const x = Phaser.Math.Between(100, GAME_WIDTH - 100);
+            const medal = this.add.container(x, -30);
+
+            // Ribbon
+            medal.add(this.add.rectangle(0, -15, 8, 20, 0xCC0000));
+            // Medal circle
+            medal.add(this.add.circle(0, 5, 15, 0xFFD700));
+            // Star
+            medal.add(this.add.star(0, 5, 5, 5, 10, 0xFFFF00));
+
+            this.tweens.add({
+                targets: medal,
+                y: GAME_HEIGHT + 50,
+                rotation: Phaser.Math.Between(-2, 2),
+                duration: Phaser.Math.Between(2500, 4000),
+                ease: 'Linear'
+            });
+        }
+    }
+
+    playBellSound() {
+        // Create bell sound using Web Audio API
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const numRings = Math.min(3 + this.currentLevel, 8);
+
+            for (let i = 0; i < numRings; i++) {
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                oscillator.frequency.value = 880;
+                oscillator.type = 'sine';
+
+                const startTime = audioCtx.currentTime + i * 0.2;
+                gainNode.gain.setValueAtTime(0.3, startTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
+
+                oscillator.start(startTime);
+                oscillator.stop(startTime + 0.5);
+            }
+        } catch (e) {
+            console.log('Audio not supported');
+        }
+    }
+}
+
+// ============== GAME CONFIG ==============
+const config = {
+    type: Phaser.AUTO,
+    width: GAME_WIDTH,
+    height: GAME_HEIGHT,
+    parent: 'game-container',
+    backgroundColor: COLORS.SKY,
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+    },
+    scene: [MenuScene, GameScene]
+};
+
+const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>
