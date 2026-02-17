@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Balance Beam Adventure</title>
+    <title>Charlotte's Balance Beam Adventure</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -31,17 +31,13 @@ const GAME_HEIGHT = 500;
 
 // iOS Audio Solution - Use HTML5 Audio with pre-loaded sounds
 let bellAudio = null;
+let sadAudio = null;
+let happyAudio = null;
 let audioInitialized = false;
 
-// Create bell sound as base64 WAV (simple beep tone)
-function createBellSound() {
-    // Generate a simple bell tone WAV file
-    const sampleRate = 22050;
-    const duration = 0.3;
-    const frequency = 880;
-    const numSamples = Math.floor(sampleRate * duration);
-
-    // WAV header
+// Helper to create WAV from samples
+function createWavFromSamples(samples, sampleRate) {
+    const numSamples = samples.length;
     const buffer = new ArrayBuffer(44 + numSamples * 2);
     const view = new DataView(buffer);
 
@@ -52,24 +48,21 @@ function createBellSound() {
 
     // "fmt " sub-chunk
     writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true); // Subchunk1Size
-    view.setUint16(20, 1, true); // AudioFormat (PCM)
-    view.setUint16(22, 1, true); // NumChannels
-    view.setUint32(24, sampleRate, true); // SampleRate
-    view.setUint32(28, sampleRate * 2, true); // ByteRate
-    view.setUint16(32, 2, true); // BlockAlign
-    view.setUint16(34, 16, true); // BitsPerSample
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
 
     // "data" sub-chunk
     writeString(view, 36, 'data');
     view.setUint32(40, numSamples * 2, true);
 
-    // Generate bell tone with decay
+    // Write samples
     for (let i = 0; i < numSamples; i++) {
-        const t = i / sampleRate;
-        const envelope = Math.exp(-t * 8); // Decay
-        const sample = Math.sin(2 * Math.PI * frequency * t) * envelope * 0.8;
-        view.setInt16(44 + i * 2, sample * 32767, true);
+        view.setInt16(44 + i * 2, samples[i] * 32767, true);
     }
 
     // Convert to base64
@@ -79,6 +72,60 @@ function createBellSound() {
         binary += String.fromCharCode(bytes[i]);
     }
     return 'data:audio/wav;base64,' + btoa(binary);
+}
+
+// Create bell sound (ding!)
+function createBellSound() {
+    const sampleRate = 22050;
+    const duration = 0.3;
+    const numSamples = Math.floor(sampleRate * duration);
+    const samples = [];
+
+    for (let i = 0; i < numSamples; i++) {
+        const t = i / sampleRate;
+        const envelope = Math.exp(-t * 8);
+        samples.push(Math.sin(2 * Math.PI * 880 * t) * envelope * 0.8);
+    }
+    return createWavFromSamples(samples, sampleRate);
+}
+
+// Create sad sound for "Noooo" (descending tone)
+function createSadSound() {
+    const sampleRate = 22050;
+    const duration = 0.5;
+    const numSamples = Math.floor(sampleRate * duration);
+    const samples = [];
+
+    for (let i = 0; i < numSamples; i++) {
+        const t = i / sampleRate;
+        // Descending frequency from 400Hz to 150Hz
+        const freq = 400 - (250 * t / duration);
+        const envelope = Math.exp(-t * 2);
+        samples.push(Math.sin(2 * Math.PI * freq * t) * envelope * 0.7);
+    }
+    return createWavFromSamples(samples, sampleRate);
+}
+
+// Create happy sound for "Hooray" (ascending celebratory tone)
+function createHappySound() {
+    const sampleRate = 22050;
+    const duration = 0.6;
+    const numSamples = Math.floor(sampleRate * duration);
+    const samples = [];
+
+    for (let i = 0; i < numSamples; i++) {
+        const t = i / sampleRate;
+        // Three ascending notes: C-E-G (major chord arpeggio)
+        let freq;
+        if (t < 0.2) freq = 523; // C5
+        else if (t < 0.4) freq = 659; // E5
+        else freq = 784; // G5
+
+        const noteT = t % 0.2;
+        const envelope = Math.exp(-noteT * 5) * 0.8;
+        samples.push(Math.sin(2 * Math.PI * freq * t) * envelope);
+    }
+    return createWavFromSamples(samples, sampleRate);
 }
 
 function writeString(view, offset, string) {
@@ -92,9 +139,15 @@ function initAudio() {
     if (audioInitialized) return;
 
     try {
-        // Create the bell audio element
+        // Create all audio elements
         bellAudio = new Audio(createBellSound());
         bellAudio.volume = 0.7;
+
+        sadAudio = new Audio(createSadSound());
+        sadAudio.volume = 0.8;
+
+        happyAudio = new Audio(createHappySound());
+        happyAudio.volume = 0.8;
 
         // Play and immediately pause to unlock on iOS
         bellAudio.play().then(() => {
@@ -127,6 +180,85 @@ function playBell(times = 3) {
         }
     }
     ring();
+}
+
+// Play sad sound for "Noooo"
+function playSadSound() {
+    if (!sadAudio) {
+        sadAudio = new Audio(createSadSound());
+        sadAudio.volume = 0.8;
+    }
+    sadAudio.currentTime = 0;
+    sadAudio.play().catch(e => console.log('Sad sound failed'));
+}
+
+// Play happy sound for "Hooray"
+function playHappySound() {
+    if (!happyAudio) {
+        happyAudio = new Audio(createHappySound());
+        happyAudio.volume = 0.8;
+    }
+    happyAudio.currentTime = 0;
+    happyAudio.play().catch(e => console.log('Happy sound failed'));
+}
+
+// Create walking jingle music (gentle, looping melody)
+let walkingAudio = null;
+let isWalkingMusicPlaying = false;
+
+function createWalkingMusic() {
+    const sampleRate = 22050;
+    const duration = 4.0; // 4 second loop
+    const numSamples = Math.floor(sampleRate * duration);
+    const samples = [];
+
+    // Simple gentle melody notes (C major scale pattern)
+    const melody = [
+        { freq: 262, start: 0.0, dur: 0.4 },    // C4
+        { freq: 294, start: 0.5, dur: 0.4 },    // D4
+        { freq: 330, start: 1.0, dur: 0.4 },    // E4
+        { freq: 294, start: 1.5, dur: 0.4 },    // D4
+        { freq: 262, start: 2.0, dur: 0.4 },    // C4
+        { freq: 247, start: 2.5, dur: 0.4 },    // B3
+        { freq: 262, start: 3.0, dur: 0.4 },    // C4
+        { freq: 220, start: 3.5, dur: 0.4 },    // A3
+    ];
+
+    for (let i = 0; i < numSamples; i++) {
+        const t = i / sampleRate;
+        let sample = 0;
+
+        for (const note of melody) {
+            if (t >= note.start && t < note.start + note.dur) {
+                const noteT = t - note.start;
+                const envelope = Math.sin(Math.PI * noteT / note.dur) * 0.3;
+                sample += Math.sin(2 * Math.PI * note.freq * t) * envelope;
+            }
+        }
+        samples.push(sample * 0.5); // Keep volume low
+    }
+    return createWavFromSamples(samples, sampleRate);
+}
+
+function startWalkingMusic() {
+    if (isWalkingMusicPlaying) return;
+
+    if (!walkingAudio) {
+        walkingAudio = new Audio(createWalkingMusic());
+        walkingAudio.volume = 0.3; // Low volume background
+        walkingAudio.loop = true;
+    }
+    walkingAudio.currentTime = 0;
+    walkingAudio.play().catch(e => console.log('Walking music failed'));
+    isWalkingMusicPlaying = true;
+}
+
+function stopWalkingMusic() {
+    if (walkingAudio && isWalkingMusicPlaying) {
+        walkingAudio.pause();
+        walkingAudio.currentTime = 0;
+        isWalkingMusicPlaying = false;
+    }
 }
 
 // Add listeners to initialize audio on first interaction
@@ -188,14 +320,20 @@ class MenuScene extends Phaser.Scene {
         this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT - 40, GAME_WIDTH, 80, COLORS.GRASS);
 
         // Title
-        this.add.text(GAME_WIDTH/2, 80, 'Balance Beam', {
-            fontSize: '48px',
+        this.add.text(GAME_WIDTH/2, 55, "Charlotte's", {
+            fontSize: '32px',
+            fontWeight: 'bold',
+            color: '#FF69B4'
+        }).setOrigin(0.5);
+
+        this.add.text(GAME_WIDTH/2, 95, 'Balance Beam', {
+            fontSize: '42px',
             fontWeight: 'bold',
             color: '#333'
         }).setOrigin(0.5);
 
-        this.add.text(GAME_WIDTH/2, 130, 'Adventure', {
-            fontSize: '42px',
+        this.add.text(GAME_WIDTH/2, 140, 'Adventure', {
+            fontSize: '38px',
             fontWeight: 'bold',
             color: '#FF6600'
         }).setOrigin(0.5);
@@ -286,23 +424,30 @@ class MenuScene extends Phaser.Scene {
         // Overlay
         const overlay = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, 0x87CEEB);
 
+        // Hi/Hej greeting
+        const hiText = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 - 100, `Hi ${playerName}! / Hej ${playerName}!`, {
+            fontSize: '28px',
+            fontWeight: 'bold',
+            color: '#FF69B4'
+        }).setOrigin(0.5);
+
         // Welcome message in English
-        const welcomeEn = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 - 60, `Welcome, ${playerName}!`, {
-            fontSize: '38px',
+        const welcomeEn = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 - 50, `Welcome, ${playerName}!`, {
+            fontSize: '36px',
             fontWeight: 'bold',
             color: '#333'
         }).setOrigin(0.5);
 
         // Welcome message in Swedish
         const welcomeSe = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 10, `Välkommen, ${playerName}!`, {
-            fontSize: '34px',
+            fontSize: '32px',
             fontWeight: 'bold',
             color: '#FF6600'
         }).setOrigin(0.5);
 
         // Decorative stars
-        const star1 = this.add.star(150, GAME_HEIGHT/2 - 30, 5, 15, 30, 0xFFD700);
-        const star2 = this.add.star(GAME_WIDTH - 150, GAME_HEIGHT/2 - 30, 5, 15, 30, 0xFFD700);
+        const star1 = this.add.star(120, GAME_HEIGHT/2 - 30, 5, 15, 30, 0xFFD700);
+        const star2 = this.add.star(GAME_WIDTH - 120, GAME_HEIGHT/2 - 30, 5, 15, 30, 0xFFD700);
 
         // Animate stars
         this.tweens.add({
@@ -313,14 +458,14 @@ class MenuScene extends Phaser.Scene {
         });
 
         // "Get Ready!" text
-        const readyText = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 80, 'Get Ready! / Gör dig redo!', {
+        const readyText = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 70, 'Get Ready! / Gör dig redo!', {
             fontSize: '22px',
             color: '#666'
         }).setOrigin(0.5);
 
         // Fade in and then transition to game
         this.tweens.add({
-            targets: [welcomeEn, welcomeSe, readyText],
+            targets: [hiText, welcomeEn, welcomeSe, readyText],
             alpha: { from: 0, to: 1 },
             duration: 500,
             onComplete: () => {
@@ -432,6 +577,9 @@ class GameScene extends Phaser.Scene {
         this.playerVelocityY = 0;
         this.isGrounded = true;
         this.legAngle = 0;
+
+        // Start walking music
+        startWalkingMusic();
     }
 
     createCloud(x, y) {
@@ -982,8 +1130,9 @@ class GameScene extends Phaser.Scene {
         this.lives--;
         this.livesText.setText(`Lives: ${'❤️'.repeat(Math.max(0, this.lives))}${'🖤'.repeat(3 - Math.max(0, this.lives))}`);
 
-        // Show "Noooo!" when hit
+        // Show "Noooo!" when hit and play sad sound
         this.showSpeechBubble('Noooo!', 1000, '#FF0000');
+        playSadSound();
 
         if (this.lives <= 0) {
             this.gameOver();
@@ -1013,8 +1162,12 @@ class GameScene extends Phaser.Scene {
     levelComplete() {
         this.score += 100;
 
-        // Show "Hooray!" speech bubble
+        // Stop walking music
+        stopWalkingMusic();
+
+        // Show "Hooray!" speech bubble and play happy sound
         this.showSpeechBubble('Hooray!', 1500, '#4CAF50');
+        playHappySound();
 
         // Play bell sound
         this.playBellSound();
@@ -1073,6 +1226,9 @@ class GameScene extends Phaser.Scene {
         this.isPlaying = false;
         this.ballTimer.remove();
         this.beeTimer.remove();
+
+        // Stop walking music
+        stopWalkingMusic();
 
         const overlay = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.6);
 
