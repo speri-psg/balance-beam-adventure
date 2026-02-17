@@ -29,60 +29,109 @@
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 500;
 
-// Global AudioContext for iOS compatibility
-let globalAudioContext = null;
-let audioUnlocked = false;
+// iOS Audio Solution - Use HTML5 Audio with pre-loaded sounds
+let bellAudio = null;
+let audioInitialized = false;
 
-function getAudioContext() {
-    if (!globalAudioContext) {
-        globalAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+// Create bell sound as base64 WAV (simple beep tone)
+function createBellSound() {
+    // Generate a simple bell tone WAV file
+    const sampleRate = 22050;
+    const duration = 0.3;
+    const frequency = 880;
+    const numSamples = Math.floor(sampleRate * duration);
+
+    // WAV header
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+
+    // "RIFF" chunk descriptor
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + numSamples * 2, true);
+    writeString(view, 8, 'WAVE');
+
+    // "fmt " sub-chunk
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true); // Subchunk1Size
+    view.setUint16(20, 1, true); // AudioFormat (PCM)
+    view.setUint16(22, 1, true); // NumChannels
+    view.setUint32(24, sampleRate, true); // SampleRate
+    view.setUint32(28, sampleRate * 2, true); // ByteRate
+    view.setUint16(32, 2, true); // BlockAlign
+    view.setUint16(34, 16, true); // BitsPerSample
+
+    // "data" sub-chunk
+    writeString(view, 36, 'data');
+    view.setUint32(40, numSamples * 2, true);
+
+    // Generate bell tone with decay
+    for (let i = 0; i < numSamples; i++) {
+        const t = i / sampleRate;
+        const envelope = Math.exp(-t * 8); // Decay
+        const sample = Math.sin(2 * Math.PI * frequency * t) * envelope * 0.8;
+        view.setInt16(44 + i * 2, sample * 32767, true);
     }
-    return globalAudioContext;
+
+    // Convert to base64
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return 'data:audio/wav;base64,' + btoa(binary);
 }
 
-// Unlock audio for iOS - must play a sound during user gesture
-function unlockAudio() {
-    if (audioUnlocked) return;
+function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+    }
+}
+
+// Initialize audio on user interaction
+function initAudio() {
+    if (audioInitialized) return;
 
     try {
-        const ctx = getAudioContext();
+        // Create the bell audio element
+        bellAudio = new Audio(createBellSound());
+        bellAudio.volume = 0.7;
 
-        // Resume context
-        if (ctx.state === 'suspended') {
-            ctx.resume();
-        }
-
-        // Create and play a silent buffer - this unlocks audio on iOS
-        const buffer = ctx.createBuffer(1, 1, 22050);
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        source.start(0);
-
-        // Also create an oscillator and immediately stop it
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        gain.gain.value = 0; // Silent
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(0);
-        osc.stop(0.001);
-
-        audioUnlocked = true;
-        console.log('Audio unlocked for iOS');
+        // Play and immediately pause to unlock on iOS
+        bellAudio.play().then(() => {
+            bellAudio.pause();
+            bellAudio.currentTime = 0;
+            audioInitialized = true;
+            console.log('Audio initialized for iOS');
+        }).catch(e => {
+            console.log('Audio init play failed, will retry on next tap');
+        });
     } catch (e) {
-        console.log('Audio unlock failed:', e);
+        console.log('Audio init failed:', e);
     }
 }
 
-// Initialize audio on ANY user interaction (required for iOS)
-function initAudioOnInteraction(e) {
-    unlockAudio();
+// Play bell sound
+function playBell(times = 3) {
+    if (!bellAudio) {
+        bellAudio = new Audio(createBellSound());
+        bellAudio.volume = 0.7;
+    }
+
+    let count = 0;
+    function ring() {
+        if (count < times) {
+            bellAudio.currentTime = 0;
+            bellAudio.play().catch(e => console.log('Bell play failed'));
+            count++;
+            setTimeout(ring, 200);
+        }
+    }
+    ring();
 }
 
-// Add listeners to multiple events for iOS
-['touchstart', 'touchend', 'click', 'keydown'].forEach(event => {
-    document.addEventListener(event, initAudioOnInteraction, { passive: true });
+// Add listeners to initialize audio on first interaction
+['touchstart', 'touchend', 'click'].forEach(event => {
+    document.addEventListener(event, initAudio, { once: false, passive: true });
 });
 
 // Colors
@@ -1092,42 +1141,9 @@ class GameScene extends Phaser.Scene {
     }
 
     playBellSound() {
-        // Use shared AudioContext for iOS compatibility
-        try {
-            const audioCtx = getAudioContext();
-
-            // Ensure context is running (iOS may suspend it)
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume().then(() => this.playBellTones(audioCtx));
-            } else {
-                this.playBellTones(audioCtx);
-            }
-        } catch (e) {
-            console.log('Audio not supported:', e);
-        }
-    }
-
-    playBellTones(audioCtx) {
+        // Use HTML5 Audio for iOS compatibility
         const numRings = Math.min(3 + this.currentLevel, 8);
-
-        for (let i = 0; i < numRings; i++) {
-            const oscillator = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-
-            oscillator.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-
-            // Bell-like frequencies (alternating for ringing effect)
-            oscillator.frequency.value = i % 2 === 0 ? 880 : 1047;
-            oscillator.type = 'sine';
-
-            const startTime = audioCtx.currentTime + i * 0.15;
-            gainNode.gain.setValueAtTime(0.4, startTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.4);
-
-            oscillator.start(startTime);
-            oscillator.stop(startTime + 0.4);
-        }
+        playBell(numRings);
     }
 
     showSpeechBubble(message, duration = 1000, color = '#333') {
