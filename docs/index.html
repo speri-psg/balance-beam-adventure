@@ -31,30 +31,59 @@ const GAME_HEIGHT = 500;
 
 // Global AudioContext for iOS compatibility
 let globalAudioContext = null;
+let audioUnlocked = false;
 
 function getAudioContext() {
     if (!globalAudioContext) {
         globalAudioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
-    // Resume if suspended (required for iOS)
-    if (globalAudioContext.state === 'suspended') {
-        globalAudioContext.resume();
-    }
     return globalAudioContext;
 }
 
-// Initialize audio on first user interaction (required for iOS)
-function initAudioOnInteraction() {
-    const ctx = getAudioContext();
-    if (ctx.state === 'suspended') {
-        ctx.resume();
+// Unlock audio for iOS - must play a sound during user gesture
+function unlockAudio() {
+    if (audioUnlocked) return;
+
+    try {
+        const ctx = getAudioContext();
+
+        // Resume context
+        if (ctx.state === 'suspended') {
+            ctx.resume();
+        }
+
+        // Create and play a silent buffer - this unlocks audio on iOS
+        const buffer = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+
+        // Also create an oscillator and immediately stop it
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        gain.gain.value = 0; // Silent
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(0);
+        osc.stop(0.001);
+
+        audioUnlocked = true;
+        console.log('Audio unlocked for iOS');
+    } catch (e) {
+        console.log('Audio unlock failed:', e);
     }
-    // Remove listeners after first interaction
-    document.removeEventListener('touchstart', initAudioOnInteraction);
-    document.removeEventListener('click', initAudioOnInteraction);
 }
-document.addEventListener('touchstart', initAudioOnInteraction, { once: true });
-document.addEventListener('click', initAudioOnInteraction, { once: true });
+
+// Initialize audio on ANY user interaction (required for iOS)
+function initAudioOnInteraction(e) {
+    unlockAudio();
+}
+
+// Add listeners to multiple events for iOS
+['touchstart', 'touchend', 'click', 'keydown'].forEach(event => {
+    document.addEventListener(event, initAudioOnInteraction, { passive: true });
+});
 
 // Colors
 const COLORS = {
@@ -1066,27 +1095,38 @@ class GameScene extends Phaser.Scene {
         // Use shared AudioContext for iOS compatibility
         try {
             const audioCtx = getAudioContext();
-            const numRings = Math.min(3 + this.currentLevel, 8);
 
-            for (let i = 0; i < numRings; i++) {
-                const oscillator = audioCtx.createOscillator();
-                const gainNode = audioCtx.createGain();
-
-                oscillator.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-
-                oscillator.frequency.value = 880;
-                oscillator.type = 'sine';
-
-                const startTime = audioCtx.currentTime + i * 0.2;
-                gainNode.gain.setValueAtTime(0.3, startTime);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
-
-                oscillator.start(startTime);
-                oscillator.stop(startTime + 0.5);
+            // Ensure context is running (iOS may suspend it)
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().then(() => this.playBellTones(audioCtx));
+            } else {
+                this.playBellTones(audioCtx);
             }
         } catch (e) {
-            console.log('Audio not supported');
+            console.log('Audio not supported:', e);
+        }
+    }
+
+    playBellTones(audioCtx) {
+        const numRings = Math.min(3 + this.currentLevel, 8);
+
+        for (let i = 0; i < numRings; i++) {
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            // Bell-like frequencies (alternating for ringing effect)
+            oscillator.frequency.value = i % 2 === 0 ? 880 : 1047;
+            oscillator.type = 'sine';
+
+            const startTime = audioCtx.currentTime + i * 0.15;
+            gainNode.gain.setValueAtTime(0.4, startTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.4);
+
+            oscillator.start(startTime);
+            oscillator.stop(startTime + 0.4);
         }
     }
 
