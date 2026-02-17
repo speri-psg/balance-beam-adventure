@@ -29,6 +29,33 @@
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 500;
 
+// Global AudioContext for iOS compatibility
+let globalAudioContext = null;
+
+function getAudioContext() {
+    if (!globalAudioContext) {
+        globalAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    // Resume if suspended (required for iOS)
+    if (globalAudioContext.state === 'suspended') {
+        globalAudioContext.resume();
+    }
+    return globalAudioContext;
+}
+
+// Initialize audio on first user interaction (required for iOS)
+function initAudioOnInteraction() {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') {
+        ctx.resume();
+    }
+    // Remove listeners after first interaction
+    document.removeEventListener('touchstart', initAudioOnInteraction);
+    document.removeEventListener('click', initAudioOnInteraction);
+}
+document.addEventListener('touchstart', initAudioOnInteraction, { once: true });
+document.addEventListener('click', initAudioOnInteraction, { once: true });
+
 // Colors
 const COLORS = {
     SKY: 0x87CEEB,
@@ -62,10 +89,14 @@ const LEVELS = [
     { ballSpeed: 200, ballInterval: 1800, beeInterval: 3000, ballCount: 4, beeCount: 4 }
 ];
 
+// Player name storage
+let playerName = 'Friend';
+
 // ============== MENU SCENE ==============
 class MenuScene extends Phaser.Scene {
     constructor() {
         super({ key: 'MenuScene' });
+        this.nameInput = null;
     }
 
     create() {
@@ -79,44 +110,148 @@ class MenuScene extends Phaser.Scene {
         this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT - 40, GAME_WIDTH, 80, COLORS.GRASS);
 
         // Title
-        this.add.text(GAME_WIDTH/2, 100, 'Balance Beam', {
+        this.add.text(GAME_WIDTH/2, 80, 'Balance Beam', {
             fontSize: '48px',
             fontWeight: 'bold',
             color: '#333'
         }).setOrigin(0.5);
 
-        this.add.text(GAME_WIDTH/2, 160, 'Adventure', {
+        this.add.text(GAME_WIDTH/2, 130, 'Adventure', {
             fontSize: '42px',
             fontWeight: 'bold',
             color: '#FF6600'
         }).setOrigin(0.5);
 
+        // Name input label
+        this.add.text(GAME_WIDTH/2, 190, 'Enter Your Name:', {
+            fontSize: '22px',
+            color: '#333'
+        }).setOrigin(0.5);
+
+        // Create HTML input for name
+        this.createNameInput();
+
         // Play button
-        const playBtn = this.add.rectangle(GAME_WIDTH/2, 280, 200, 60, 0x4CAF50)
+        const playBtn = this.add.rectangle(GAME_WIDTH/2, 320, 200, 60, 0x4CAF50)
             .setInteractive({ useHandCursor: true });
-        this.add.text(GAME_WIDTH/2, 280, 'PLAY', {
+        this.add.text(GAME_WIDTH/2, 320, 'PLAY', {
             fontSize: '32px',
             fontWeight: 'bold',
             color: '#FFF'
         }).setOrigin(0.5);
 
         playBtn.on('pointerdown', () => {
-            this.scene.start('GameScene', { level: 1, score: 0, lives: 3 });
+            // Save the name
+            if (this.nameInput && this.nameInput.value.trim()) {
+                playerName = this.nameInput.value.trim();
+            }
+            this.removeNameInput();
+            this.showWelcomeGreeting();
         });
 
         playBtn.on('pointerover', () => playBtn.setFillStyle(0x45a049));
         playBtn.on('pointerout', () => playBtn.setFillStyle(0x4CAF50));
 
         // Instructions
-        this.add.text(GAME_WIDTH/2, 380, 'Tap or Press SPACE to Jump!', {
+        this.add.text(GAME_WIDTH/2, 400, 'Tap or Press SPACE to Jump!', {
             fontSize: '20px',
             color: '#333'
         }).setOrigin(0.5);
 
-        this.add.text(GAME_WIDTH/2, 420, 'Avoid bowling balls and bees!', {
+        this.add.text(GAME_WIDTH/2, 435, 'Avoid bowling balls and bees!', {
             fontSize: '18px',
             color: '#666'
         }).setOrigin(0.5);
+    }
+
+    createNameInput() {
+        // Create HTML input element
+        this.nameInput = document.createElement('input');
+        this.nameInput.type = 'text';
+        this.nameInput.placeholder = 'Your name';
+        this.nameInput.value = playerName !== 'Friend' ? playerName : '';
+        this.nameInput.maxLength = 15;
+        this.nameInput.style.cssText = `
+            position: absolute;
+            width: 200px;
+            padding: 10px 15px;
+            font-size: 18px;
+            border: 3px solid #4CAF50;
+            border-radius: 25px;
+            text-align: center;
+            outline: none;
+            font-family: Arial, sans-serif;
+        `;
+
+        // Position the input over the canvas
+        const canvas = document.querySelector('canvas');
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = rect.width / GAME_WIDTH;
+        const scaleY = rect.height / GAME_HEIGHT;
+
+        this.nameInput.style.left = (rect.left + (GAME_WIDTH/2 - 100) * scaleX) + 'px';
+        this.nameInput.style.top = (rect.top + 220 * scaleY) + 'px';
+        this.nameInput.style.transform = `scale(${scaleX})`;
+        this.nameInput.style.transformOrigin = 'top left';
+
+        document.body.appendChild(this.nameInput);
+    }
+
+    removeNameInput() {
+        if (this.nameInput && this.nameInput.parentNode) {
+            this.nameInput.parentNode.removeChild(this.nameInput);
+            this.nameInput = null;
+        }
+    }
+
+    showWelcomeGreeting() {
+        // Overlay
+        const overlay = this.add.rectangle(GAME_WIDTH/2, GAME_HEIGHT/2, GAME_WIDTH, GAME_HEIGHT, 0x87CEEB);
+
+        // Welcome message in English
+        const welcomeEn = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 - 60, `Welcome, ${playerName}!`, {
+            fontSize: '38px',
+            fontWeight: 'bold',
+            color: '#333'
+        }).setOrigin(0.5);
+
+        // Welcome message in Swedish
+        const welcomeSe = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 10, `Välkommen, ${playerName}!`, {
+            fontSize: '34px',
+            fontWeight: 'bold',
+            color: '#FF6600'
+        }).setOrigin(0.5);
+
+        // Decorative stars
+        const star1 = this.add.star(150, GAME_HEIGHT/2 - 30, 5, 15, 30, 0xFFD700);
+        const star2 = this.add.star(GAME_WIDTH - 150, GAME_HEIGHT/2 - 30, 5, 15, 30, 0xFFD700);
+
+        // Animate stars
+        this.tweens.add({
+            targets: [star1, star2],
+            rotation: Math.PI * 2,
+            duration: 2000,
+            repeat: -1
+        });
+
+        // "Get Ready!" text
+        const readyText = this.add.text(GAME_WIDTH/2, GAME_HEIGHT/2 + 80, 'Get Ready! / Gör dig redo!', {
+            fontSize: '22px',
+            color: '#666'
+        }).setOrigin(0.5);
+
+        // Fade in and then transition to game
+        this.tweens.add({
+            targets: [welcomeEn, welcomeSe, readyText],
+            alpha: { from: 0, to: 1 },
+            duration: 500,
+            onComplete: () => {
+                // Wait 2 seconds then start game
+                this.time.delayedCall(2000, () => {
+                    this.scene.start('GameScene', { level: 1, score: 0, lives: 3 });
+                });
+            }
+        });
     }
 }
 
@@ -190,6 +325,11 @@ class GameScene extends Phaser.Scene {
 
         // UI
         this.createUI();
+
+        // Speech bubble (hidden initially)
+        this.speechBubble = this.add.container(0, 0);
+        this.speechBubble.setVisible(false);
+        this.speechBubble.setDepth(100);
 
         // Input
         this.input.on('pointerdown', () => this.jump());
@@ -575,6 +715,8 @@ class GameScene extends Phaser.Scene {
                 if (wasInAir) {
                     this.facingFront = true;
                     this.frontTimer = 0.4;
+                    // Say hi to the player!
+                    this.showSpeechBubble(`Hi ${playerName}!`, 800, '#FF69B4');
                 }
             }
         }
@@ -762,6 +904,9 @@ class GameScene extends Phaser.Scene {
         this.lives--;
         this.livesText.setText(`Lives: ${'❤️'.repeat(Math.max(0, this.lives))}${'🖤'.repeat(3 - Math.max(0, this.lives))}`);
 
+        // Show "Noooo!" when hit
+        this.showSpeechBubble('Noooo!', 1000, '#FF0000');
+
         if (this.lives <= 0) {
             this.gameOver();
         } else {
@@ -789,6 +934,9 @@ class GameScene extends Phaser.Scene {
 
     levelComplete() {
         this.score += 100;
+
+        // Show "Hooray!" speech bubble
+        this.showSpeechBubble('Hooray!', 1500, '#4CAF50');
 
         // Play bell sound
         this.playBellSound();
@@ -915,9 +1063,9 @@ class GameScene extends Phaser.Scene {
     }
 
     playBellSound() {
-        // Create bell sound using Web Audio API
+        // Use shared AudioContext for iOS compatibility
         try {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const audioCtx = getAudioContext();
             const numRings = Math.min(3 + this.currentLevel, 8);
 
             for (let i = 0; i < numRings; i++) {
@@ -940,6 +1088,49 @@ class GameScene extends Phaser.Scene {
         } catch (e) {
             console.log('Audio not supported');
         }
+    }
+
+    showSpeechBubble(message, duration = 1000, color = '#333') {
+        // Clear previous speech bubble
+        this.speechBubble.removeAll(true);
+
+        // Position above player
+        const bubbleX = this.player.x;
+        const bubbleY = this.player.y - 80;
+
+        // Create bubble background
+        const padding = 12;
+        const textObj = this.add.text(0, 0, message, {
+            fontSize: '18px',
+            fontWeight: 'bold',
+            color: color
+        }).setOrigin(0.5);
+
+        const bubbleWidth = textObj.width + padding * 2;
+        const bubbleHeight = textObj.height + padding * 2;
+
+        const bg = this.add.graphics();
+        bg.fillStyle(0xFFFFFF, 0.95);
+        bg.lineStyle(3, 0x333333);
+        bg.fillRoundedRect(-bubbleWidth/2, -bubbleHeight/2, bubbleWidth, bubbleHeight, 10);
+        bg.strokeRoundedRect(-bubbleWidth/2, -bubbleHeight/2, bubbleWidth, bubbleHeight, 10);
+
+        // Speech bubble pointer
+        bg.fillStyle(0xFFFFFF, 0.95);
+        bg.fillTriangle(-8, bubbleHeight/2, 8, bubbleHeight/2, 0, bubbleHeight/2 + 12);
+        bg.lineStyle(3, 0x333333);
+        bg.lineBetween(-8, bubbleHeight/2, 0, bubbleHeight/2 + 12);
+        bg.lineBetween(8, bubbleHeight/2, 0, bubbleHeight/2 + 12);
+
+        this.speechBubble.add(bg);
+        this.speechBubble.add(textObj);
+        this.speechBubble.setPosition(bubbleX, bubbleY);
+        this.speechBubble.setVisible(true);
+
+        // Auto-hide after duration
+        this.time.delayedCall(duration, () => {
+            this.speechBubble.setVisible(false);
+        });
     }
 }
 
